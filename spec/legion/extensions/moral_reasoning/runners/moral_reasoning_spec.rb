@@ -2,6 +2,7 @@
 
 RSpec.describe Legion::Extensions::MoralReasoning::Runners::MoralReasoning do
   let(:client) { Legion::Extensions::MoralReasoning::Client.new }
+  let(:enhancer) { Legion::Extensions::MoralReasoning::Helpers::LlmEnhancer }
 
   let(:options) do
     [
@@ -27,6 +28,82 @@ RSpec.describe Legion::Extensions::MoralReasoning::Runners::MoralReasoning do
         domain:               :workplace
       )
       expect(result[:domain]).to eq(:workplace)
+    end
+
+    context 'when LLM is available' do
+      let(:llm_result) do
+        {
+          reasoning:          'LLM ethical analysis of this action.',
+          foundation_impacts: { care: 0.2, fairness: 0.1, loyalty: -0.05,
+                                authority: 0.0, sanctity: 0.1, liberty: 0.05 }
+        }
+      end
+
+      before do
+        allow(enhancer).to receive(:available?).and_return(true)
+        allow(enhancer).to receive(:evaluate_action).and_return(llm_result)
+      end
+
+      it 'returns source: :llm' do
+        result = client.evaluate_moral_action(
+          action:               'help_stranger',
+          affected_foundations: %i[care fairness]
+        )
+        expect(result[:source]).to eq(:llm)
+      end
+
+      it 'includes LLM reasoning' do
+        result = client.evaluate_moral_action(
+          action:               'help_stranger',
+          affected_foundations: %i[care fairness]
+        )
+        expect(result[:reasoning]).to eq('LLM ethical analysis of this action.')
+      end
+
+      it 'includes foundation_impacts from LLM' do
+        result = client.evaluate_moral_action(
+          action:               'help_stranger',
+          affected_foundations: %i[care fairness]
+        )
+        expect(result[:foundation_impacts]).to eq(llm_result[:foundation_impacts])
+      end
+    end
+
+    context 'when LLM is unavailable' do
+      before do
+        allow(enhancer).to receive(:available?).and_return(false)
+      end
+
+      it 'returns source: :mechanical' do
+        result = client.evaluate_moral_action(
+          action:               'help_stranger',
+          affected_foundations: %i[care fairness]
+        )
+        expect(result[:source]).to eq(:mechanical)
+      end
+
+      it 'still returns success: true' do
+        result = client.evaluate_moral_action(
+          action:               'help_stranger',
+          affected_foundations: %i[care fairness]
+        )
+        expect(result[:success]).to be true
+      end
+    end
+
+    context 'when LLM returns nil' do
+      before do
+        allow(enhancer).to receive(:available?).and_return(true)
+        allow(enhancer).to receive(:evaluate_action).and_return(nil)
+      end
+
+      it 'falls back to mechanical and returns source: :mechanical' do
+        result = client.evaluate_moral_action(
+          action:               'help_stranger',
+          affected_foundations: %i[care fairness]
+        )
+        expect(result[:source]).to eq(:mechanical)
+      end
     end
   end
 
@@ -65,6 +142,69 @@ RSpec.describe Legion::Extensions::MoralReasoning::Runners::MoralReasoning do
         framework:  :utilitarian
       )
       expect(result[:success]).to be false
+    end
+
+    context 'when LLM is available' do
+      let(:llm_result) do
+        {
+          chosen_option: 'opt_a',
+          confidence:    0.88,
+          reasoning:     'Utilitarian calculus favors this option for the greatest collective benefit.'
+        }
+      end
+
+      before do
+        allow(enhancer).to receive(:available?).and_return(true)
+        allow(enhancer).to receive(:resolve_dilemma).and_return(llm_result)
+      end
+
+      it 'returns source: :llm' do
+        result = client.resolve_moral_dilemma(
+          dilemma_id: dilemma_id,
+          option_id:  'opt_a',
+          reasoning:  'manual reasoning',
+          framework:  :utilitarian
+        )
+        expect(result[:source]).to eq(:llm)
+      end
+
+      it 'includes llm_chosen and llm_confidence' do
+        result = client.resolve_moral_dilemma(
+          dilemma_id: dilemma_id,
+          option_id:  'opt_a',
+          reasoning:  'manual reasoning',
+          framework:  :utilitarian
+        )
+        expect(result[:llm_chosen]).to eq('opt_a')
+        expect(result[:llm_confidence]).to eq(0.88)
+      end
+
+      it 'resolves successfully using LLM reasoning' do
+        result = client.resolve_moral_dilemma(
+          dilemma_id: dilemma_id,
+          option_id:  'opt_a',
+          reasoning:  'manual reasoning',
+          framework:  :utilitarian
+        )
+        expect(result[:success]).to be true
+      end
+    end
+
+    context 'when LLM is unavailable' do
+      before do
+        allow(enhancer).to receive(:available?).and_return(false)
+      end
+
+      it 'resolves mechanically without source key from LLM' do
+        result = client.resolve_moral_dilemma(
+          dilemma_id: dilemma_id,
+          option_id:  'opt_a',
+          reasoning:  'manual reasoning',
+          framework:  :utilitarian
+        )
+        expect(result[:success]).to be true
+        expect(result[:source]).to be_nil
+      end
     end
   end
 
