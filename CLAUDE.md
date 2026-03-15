@@ -27,6 +27,8 @@ lib/legion/extensions/moral_reasoning/
     dilemma.rb            # Dilemma value object
     moral_foundation.rb   # MoralFoundation with weight reinforcement/decay
     moral_engine.rb       # MoralEngine with evaluation and development tracking
+  helpers/
+    llm_enhancer.rb       # LlmEnhancer module — optional LLM moral evaluation
   runners/
     moral_reasoning.rb    # Runner module
 
@@ -148,6 +150,24 @@ Private state: `@engine` (memoized `MoralEngine` instance).
 | `update_moral_reasoning` | `tick_results: {}` | Decay foundation weights; extract moral signals from tick |
 | `moral_reasoning_stats` | (none) | Foundation profile, current stage, dilemma count |
 
+## LLM Enhancement
+
+`Helpers::LlmEnhancer` provides optional LLM-driven moral evaluation via `legion-llm`.
+
+**System prompt theme**: Moral reasoning engine for an autonomous AI agent. Applies ethical frameworks rigorously and analytically, producing structured reasoning rather than opinions.
+
+| Method | Parameters | Returns |
+|---|---|---|
+| `available?` | — | `true` when `Legion::LLM.started?` |
+| `evaluate_action` | `action:, description:, foundations:` | `{ reasoning: String, foundation_impacts: { care: Float, ... } }`, or `nil` on failure |
+| `resolve_dilemma` | `dilemma_description:, options:, framework:` | `{ chosen_option: String, confidence: Float, reasoning: String }`, or `nil` on failure |
+
+`foundation_impacts` values are floats clamped to `-1.0..1.0` (negative = harmful to foundation, positive = reinforces it).
+
+**Fallback**: When LLM is unavailable or returns nil, `evaluate_moral_action` falls back to `MoralEngine#evaluate_action` (token-counting foundation heuristics) and `resolve_moral_dilemma` uses the caller-supplied `reasoning` string with standard engine resolution.
+
+**Source indicator**: Both runners return `source: :llm` in the result hash when LLM is used, `source: :mechanical` otherwise.
+
 ## Integration Points
 
 - **lex-consent**: moral evaluation informs consent tier escalation — actions with severe violations should trigger `:consult` or `:request` consent tier.
@@ -158,6 +178,9 @@ Private state: `@engine` (memoized `MoralEngine` instance).
 
 ## Development Notes
 
+- `legion-llm` (optional): `LlmEnhancer` calls `Legion::LLM.chat` when started; fully skipped otherwise
+- LLM enhancement is always optional: `LlmEnhancer` rescues all `StandardError`, logs a warn, and returns nil — mechanical fallback activates automatically
+- `LlmEnhancer.available?` also rescues `StandardError` (returns false), so missing `legion-llm` gem never raises
 - `evaluate_action` scores an action by checking whether the action's properties (from context hash) align with or violate each foundation's content model. The scoring is heuristic — context keys like `harm:`, `fair:`, `loyal:` are matched against foundation names.
 - `moral_development` derives the current Kohlberg stage from resolution history: the most-used framework and foundation profile together determine stage. High utilitarian use = stage 5; high universal_ethics = stage 6; minimal reasoning = stage 1-2.
 - Foundation `decay` floors at 0.1 — no foundation can be completely suppressed. This models the psychological finding that all foundations are present in all individuals to some degree.
