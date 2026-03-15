@@ -83,6 +83,20 @@ client.moral_foundation_profile
 | `update_moral_reasoning` | Decay foundation weights; extract moral signals from tick |
 | `moral_reasoning_stats` | Foundation profile, current stage, dilemma count |
 
+## LLM Enhancement
+
+When `legion-llm` is loaded and started, `Helpers::LlmEnhancer` augments moral evaluation and dilemma resolution with structured LLM reasoning.
+
+**Methods**:
+
+`LlmEnhancer.evaluate_action(action:, description:, foundations:)` — takes the action name, a human-readable description, and the current foundation strength hash, and returns `{ reasoning: String, foundation_impacts: { care: Float, fairness: Float, loyalty: Float, authority: Float, sanctity: Float, liberty: Float } }`. Each foundation impact is a float in `-1.0..1.0` (negative = harmful to that foundation, positive = reinforces it). The runner surfaces the reasoning and applies the impact values to inform the mechanical moral score.
+
+`LlmEnhancer.resolve_dilemma(dilemma_description:, options:, framework:)` — takes the dilemma scenario, array of option hashes, and the requested ethical framework, and returns `{ chosen_option: String, confidence: Float, reasoning: String }`. Confidence is clamped to `0.0..1.0`. The runner uses the chosen option and reasoning to drive `MoralEngine#resolve_dilemma`.
+
+**Availability gate**: `LlmEnhancer.available?` checks `Legion::LLM.started?`. Returns `false` if `legion-llm` is not loaded, not configured, or raises any error.
+
+**Fallback**: When LLM is unavailable or either method returns `nil`, `evaluate_moral_action` falls back to `MoralEngine#evaluate_action` (token-counting foundation heuristics) and `resolve_moral_dilemma` uses the caller-supplied `reasoning` string with the standard engine resolution. Both runners return `source: :llm` or `source: :mechanical` to indicate which path was taken.
+
 ## Development
 
 ```bash
